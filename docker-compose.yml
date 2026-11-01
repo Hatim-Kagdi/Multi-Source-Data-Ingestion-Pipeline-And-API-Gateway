@@ -1,0 +1,61 @@
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: data_gateway_redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - gateway_net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 2s
+
+  api_gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: data_gateway_api
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    environment:
+      - PROJECT_NAME=Enterprise Data Gateway
+      - ENVIRONMENT=production
+      - DEBUG=false
+      - LOG_LEVEL=INFO
+      - HOST=0.0.0.0
+      - PORT=8000
+      - REDIS_URL=redis://redis:6379/0
+      - REDIS_CACHE_TTL_SECONDS=300
+      - EXTERNAL_API_BASE_URL=https://api.frankfurter.app
+      - SCRAPING_TARGET_URL=https://news.ycombinator.com
+      - HTTP_TIMEOUT_SECONDS=10.0
+      - HTTP_MAX_RETRIES=3
+      - HTTP_BACKOFF_FACTOR=0.5
+    networks:
+      - gateway_net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+volumes:
+  redis_data:
+    driver: local
+
+networks:
+  gateway_net:
+    driver: bridge
+
